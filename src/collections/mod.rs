@@ -1,10 +1,52 @@
 use std::mem::replace;
 
+pub struct Iter<'a, K, V> {
+    inner: &'a StupidMap<K, V>,
+    idx: usize,
+}
+
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.inner.len() {
+            let ent = &self.inner.entries[self.idx];
+            self.idx += 1;
+            Some((&ent.0, &ent.1))
+        } else {
+            None
+        }
+    }
+}
+
+pub struct IterMut<'a, K, V> {
+    inner: &'a mut StupidMap<K, V>,
+    idx: usize,
+}
+
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.inner.len() {
+            let idx = self.idx;
+            self.idx += 1;
+            let ptr = self.inner.entries.as_mut_ptr();
+            unsafe {
+                let ent = &mut *ptr.add(idx);
+                Some((&ent.0, &mut ent.1))
+            }
+        } else {
+            None
+        }
+    }
+}
+
 pub struct StupidMap<K, V> {
     entries: Vec<(K, V)>,
 }
 
-impl<K: Eq, V> StupidMap<K, V> {
+impl<K, V> StupidMap<K, V> {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -19,6 +61,21 @@ impl<K: Eq, V> StupidMap<K, V> {
         self.entries.clear()
     }
 
+    pub fn iter(&self) -> Iter<K, V> {
+        Iter {
+            inner: self,
+            idx: 0,
+        }
+    }
+    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+        IterMut {
+            inner: self,
+            idx: 0,
+        }
+    }
+}
+
+impl<K: Eq, V> StupidMap<K, V> {
     pub fn insert(&mut self, key: K, val: V) -> Option<V> {
         if let Some(ent) = self.entries.iter_mut().find(|ent| ent.0 == key) {
             let old = replace(&mut ent.1, val);
@@ -144,5 +201,46 @@ mod tests {
         assert_eq!(map.get_key_value(&2), Some((&2, &"two")));
         assert_eq!(map.get_key_value(&3), Some((&3, &"three")));
         assert_eq!(map.get_key_value(&4), None);
+    }
+
+    #[test]
+    fn iter() {
+        let mut map = StupidMap::new();
+
+        assert_eq!(map.insert(1, "one"), None);
+        assert_eq!(map.insert(2, "two"), None);
+        assert_eq!(map.insert(3, "three"), None);
+
+        let mut iter = map.iter();
+
+        assert_eq!(iter.next(), Some((&1, &"one")));
+        assert_eq!(iter.next(), Some((&2, &"two")));
+        assert_eq!(iter.next(), Some((&3, &"three")));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn iter_mut() {
+        let mut map = StupidMap::new();
+
+        assert_eq!(map.insert(1, "one"), None);
+        assert_eq!(map.insert(2, "two"), None);
+        assert_eq!(map.insert(3, "three"), None);
+
+        let first = map.iter_mut().next();
+
+        assert_eq!(first, Some((&1, &mut "one")));
+
+        let first = first.unwrap();
+
+        *first.1 = "One";
+
+        assert_eq!(map.get(&1), Some(&"One"));
+
+        let mut iter = map.iter_mut();
+        assert_eq!(iter.next(), Some((&1, &mut "One")));
+        assert_eq!(iter.next(), Some((&2, &mut "two")));
+        assert_eq!(iter.next(), Some((&3, &mut "three")));
+        assert_eq!(iter.next(), None);
     }
 }
